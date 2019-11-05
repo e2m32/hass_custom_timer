@@ -3,6 +3,12 @@ Based on hassio timer from version [0.101.2](https://github.com/home-assistant/h
 
 Allows for restoring timer after restart.
 
+## Installing
+
+Create a directory in your Home Assistant `home` directory called `custom_components`. This is the same directory that your `configuration.yaml`file lives. Copy the directory `timer` from this repository (`/custom_components/timer`) to your `custom_components` directory. Home Assistant will now use this code to setup and use your timers.
+
+To add the restore functionality, add the `restore: true` to your timer configuration. If the default 15 minute `restore_timeout` value does not work for your setup, you can change it to whatever time period you wish. See Example below.
+
 ## Configuration
 Basic configuration is the same as before. To gain the same functionality as the original timer, add the following to your configuration.yaml file:
 
@@ -23,7 +29,7 @@ To restore the timer after a restart, add the following to your configuration.ya
 
 Setting `restore: true` will enable the timer to be restored at start up. The `restore_timeout` is to control if the `finished` event is triggered if home assistant has been down for longer than your timer was set for.
 
-### Example:
+### Explanation of Behavior:
 
 Say you have the following timer. When the timer is `finished`, an automation is triggered.
 
