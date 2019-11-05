@@ -19,15 +19,15 @@ ENTITY_ID_FORMAT = DOMAIN + ".{}"
 
 DEFAULT_DURATION = 0
 DEFAULT_RESTORE = False
-DEFAULT_RESTORE_TIMEOUT = timedelta(minutes=15)
+DEFAULT_RESTORE_GRACE_PERIOD = timedelta(minutes=15)
 ATTR_DURATION = "duration"
 ATTR_REMAINING = "remaining"
 ATTR_RESTORE = "restore"
-ATTR_RESTORE_TIMEOUT = "restore_timeout"
+ATTR_RESTORE_GRACE_PERIOD = "restore_grace_period"
 ATTR_END = "end"
 CONF_DURATION = "duration"
 CONF_RESTORE = "restore"
-CONF_RESTORE_TIMEOUT = "restore_timeout"
+CONF_RESTORE_GRACE_PERIOD = "restore_grace_period"
 
 STATUS_IDLE = "idle"
 STATUS_ACTIVE = "active"
@@ -64,7 +64,7 @@ CONFIG_SCHEMA = vol.Schema(
                         CONF_RESTORE, DEFAULT_RESTORE
                     ): cv.boolean,
                     vol.Optional(
-                        CONF_RESTORE_TIMEOUT, DEFAULT_RESTORE_TIMEOUT
+                        CONF_RESTORE_GRACE_PERIOD, DEFAULT_RESTORE_GRACE_PERIOD
                     ): cv.time_period,
                 },
                 None,
@@ -89,9 +89,9 @@ async def async_setup(hass, config):
         icon = cfg.get(CONF_ICON)
         duration = cfg.get(CONF_DURATION)
         restore = cfg.get(CONF_RESTORE)
-        restore_timeout = cfg.get(CONF_RESTORE_TIMEOUT)
+        restore_grace_period = cfg.get(CONF_RESTORE_GRACE_PERIOD)
 
-        entities.append(Timer(hass, object_id, name, icon, duration, restore, restore_timeout))
+        entities.append(Timer(hass, object_id, name, icon, duration, restore, restore_grace_period))
 
     if not entities:
         return False
@@ -116,7 +116,7 @@ async def async_setup(hass, config):
 class Timer(RestoreEntity):
     """Representation of a timer."""
 
-    def __init__(self, hass, object_id, name, icon, duration, restore, restore_timeout):
+    def __init__(self, hass, object_id, name, icon, duration, restore, restore_grace_period):
         """Initialize a timer."""
         self.entity_id = ENTITY_ID_FORMAT.format(object_id)
         self._name = name
@@ -126,11 +126,11 @@ class Timer(RestoreEntity):
         self._restore = restore if restore is not None \
                         else DEFAULT_RESTORE
         if self._restore:
-            self._restore_timeout = restore_timeout \
-                                    if restore_timeout is not None \
-                                    else DEFAULT_RESTORE_TIMEOUT
+            self._restore_grace_period = restore_grace_period \
+                                    if restore_grace_period is not None \
+                                    else DEFAULT_RESTORE_GRACE_PERIOD
         else:
-            self._restore_timeout = None
+            self._restore_grace_period = None
         
         self._icon = icon
         self._hass = hass
@@ -164,7 +164,7 @@ class Timer(RestoreEntity):
             ATTR_DURATION: str(self._duration),
             ATTR_REMAINING: str(self._remaining),
             ATTR_RESTORE: str(self._restore),
-            ATTR_RESTORE_TIMEOUT: str(self._restore_timeout),
+            ATTR_RESTORE_GRACE_PERIOD: str(self._restore_grace_period),
             ATTR_END: str(self._end.replace(tzinfo=timezone.utc).astimezone(tz=None)) \
                       if self._end is not None \
                       else None,
@@ -206,8 +206,8 @@ class Timer(RestoreEntity):
 
                     if self._state == STATUS_ACTIVE:
                         self._remaining = self._end - dt_util.utcnow()
-                        # Only restore if restore_timeout not exceeded
-                        if self._remaining + self._restore_timeout >= timedelta():
+                        # Only restore if restore_grace_period not exceeded
+                        if self._remaining + self._restore_grace_period >= timedelta():
                             self._state = STATUS_PAUSED
                             self._end = None
                             await self.async_start(None)
