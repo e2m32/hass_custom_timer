@@ -5,31 +5,41 @@ Allows for restoring timer after restart.
 
 ## Installing
 
-Create a directory in your Home Assistant `home` directory called `custom_components`. This is the same directory that your `configuration.yaml`file lives. Copy the directory `timer` from this repository (`/custom_components/timer`) to your `custom_components` directory. Home Assistant will now use this code to setup and use your timers.
+Create a directory in your Home Assistant `home` directory called `custom_components`. This is the same directory that your `configuration.yaml` file lives. Copy the directory `timer` from this repository (`/custom_components/timer`) to your `custom_components` directory. Home Assistant will now use this code to setup and use your timers.
 
-To add the restore functionality, add the `restore: true` to your timer configuration. If the default 15 minute `restore_grace_period` value does not work for your setup, you can change it to whatever time period you wish. See Example below.
+By default, the timer will be restored at HA boot. If the time has passed for when HA should have fired the `finished` event, then the `finished` event for the timer will not be fired. There is an option of adding a grace period to allow this event to fire. 
+
+See Example below.
 
 ## Configuration
-Basic configuration is the same as before. To gain the same functionality as the original timer, add the following to your configuration.yaml file:
+Basic configuration is the same as before. To load the defaults, add the following to your configuration.yaml file:
 
     # Example configuration.yaml entry
     timer:
       laundry:
-        duration: '00:01:00'
 
-### New Restore after restart functionality
-To restore the timer after a restart, add the following to your configuration.yaml file:
+With this configuration, a timer will be added with a 0 `duration` and it will be restored on reboot with the last set duration.
+
+### Disable restore
+To revert the timer to the previous functionality, use the following configuration:
 
     # Example configuration.yaml entry
     timer:
       laundry:
-        duration: '00:01:00'
-        restore: true
-        restore_grace_period: '00:15:00'  # default grace period is 15 minutes
+        restore: false
 
-Setting `restore: true` will enable the timer to be restored at start up. The `restore_grace_period` is to control if the `finished` event is triggered if home assistant has been down for longer than your timer was set for.
 
-### Explanation of Behavior:
+### Utilize the grace period
+To allow a timer to fire a `finished` event when the `duration` time has already passed, add the following to your configuration.yaml file:
+
+    # Example configuration.yaml entry
+    timer:
+      laundry:
+        restore_grace_period: '00:15:00'
+
+This sets the `restore_grace_period` to 15 minutes. This means that if HA goes down at 1:00 p.m. and the timer should have `finished` at 1:01 p.m., HA has until 1:16 p.m. to start up and fire the `finished` event. If HA doesn't come back online until 1:17 p.m., then it will not fire the `finished` event and your associated automation will not be triggered.
+
+### More examples:
 
 Say you have the following timer. When the timer is `finished`, an automation is triggered.
 
@@ -38,7 +48,7 @@ Say you have the following timer. When the timer is `finished`, an automation is
       turn_off_patio_light:
         duration: '01:00:00'
         restore: true
-        restore_grace_period: '00:15:00'  # default grace period is 15 minutes
+        restore_grace_period: '00:15:00'
 
     # Example automation.yaml entry
     - alias: Timer for patio light finished
@@ -61,4 +71,4 @@ The timer is started with a duration of 1 hour. After 30 minutes have elapsed, t
 
 _Scenario 3:_
  
-The timer is started with a duration of 1 hour. After 50 minutes have elapsed, there is a power outage and Home Assistant is off for 30 minutes. When Home Assistant comes online, it sees that the timer should have `finished` 20 minutes prior to it coming online. Since the `restore_grace_period` is set to 15 minutes 20 minutes have passed since the timer should have `finished`, Home Assistant not fire the event and the automation will not be triggered. The timer will then return to its `idle` state.
+The timer is started with a duration of 1 hour. After 50 minutes have elapsed, there is a power outage and Home Assistant is off for 30 minutes. When Home Assistant comes online, it sees that the timer should have `finished` 20 minutes prior to it coming online. Since the `restore_grace_period` is set to 15 minutes and 20 minutes have passed since the timer should have `finished`, Home Assistant not fire the event and the automation will not be triggered. The timer will then return to its `idle` state.
