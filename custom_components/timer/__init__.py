@@ -18,8 +18,8 @@ DOMAIN = "timer"
 ENTITY_ID_FORMAT = DOMAIN + ".{}"
 
 DEFAULT_DURATION = 0
-DEFAULT_RESTORE = False
-DEFAULT_RESTORE_GRACE_PERIOD = timedelta(minutes=15)
+DEFAULT_RESTORE = True
+DEFAULT_RESTORE_GRACE_PERIOD = timedelta()
 ATTR_DURATION = "duration"
 ATTR_REMAINING = "remaining"
 ATTR_RESTORE = "restore"
@@ -58,13 +58,13 @@ CONFIG_SCHEMA = vol.Schema(
                     vol.Optional(CONF_NAME): cv.string,
                     vol.Optional(CONF_ICON): cv.icon,
                     vol.Optional(
-                        CONF_DURATION, timedelta(DEFAULT_DURATION)
+                        CONF_DURATION, default=timedelta(DEFAULT_DURATION)
                     ): cv.time_period,
                     vol.Optional(
-                        CONF_RESTORE, DEFAULT_RESTORE
+                        CONF_RESTORE, default=DEFAULT_RESTORE
                     ): cv.boolean,
                     vol.Optional(
-                        CONF_RESTORE_GRACE_PERIOD, DEFAULT_RESTORE_GRACE_PERIOD
+                        CONF_RESTORE_GRACE_PERIOD, default=DEFAULT_RESTORE_GRACE_PERIOD
                     ): cv.time_period,
                 },
                 None,
@@ -123,12 +123,9 @@ class Timer(RestoreEntity):
         self._state = STATUS_IDLE
         self._duration = duration
         self._remaining = self._duration
-        self._restore = restore if restore is not None \
-                        else DEFAULT_RESTORE
+        self._restore = restore 
         if self._restore:
-            self._restore_grace_period = restore_grace_period \
-                                    if restore_grace_period is not None \
-                                    else DEFAULT_RESTORE_GRACE_PERIOD
+            self._restore_grace_period = restore_grace_period
         else:
             self._restore_grace_period = None
         
