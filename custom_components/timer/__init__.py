@@ -4,12 +4,12 @@ import logging
 
 import voluptuous as vol
 
-from homeassistant.const import CONF_ICON, CONF_NAME
+from homeassistant.const import CONF_ICON, CONF_NAME, SERVICE_RELOAD
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.config_validation import ENTITY_SERVICE_SCHEMA
 from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.helpers.restore_state import RestoreEntity
+import homeassistant.helpers.service
 import homeassistant.util.dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ STATUS_IDLE = "idle"
 STATUS_ACTIVE = "active"
 STATUS_PAUSED = "paused"
 
-VIABLE_STATUSES = [STATUS_IDLE, STATUS_ACTIVE, STATUS_PAUSED ]
+VIABLE_STATUSES = [STATUS_IDLE, STATUS_ACTIVE, STATUS_PAUSED]
 
 EVENT_TIMER_FINISHED = "timer.finished"
 EVENT_TIMER_CANCELLED = "timer.cancelled"
@@ -45,10 +45,6 @@ SERVICE_START = "start"
 SERVICE_PAUSE = "pause"
 SERVICE_CANCEL = "cancel"
 SERVICE_FINISH = "finish"
-
-SERVICE_SCHEMA_DURATION = ENTITY_SERVICE_SCHEMA.extend(
-    {vol.Optional(ATTR_DURATION, default=timedelta(DEFAULT_DURATION)): cv.time_period}
-)
 
 CONFIG_SCHEMA = vol.Schema(
     {
@@ -74,11 +70,51 @@ CONFIG_SCHEMA = vol.Schema(
     extra=vol.ALLOW_EXTRA,
 )
 
+RELOAD_SERVICE_SCHEMA = vol.Schema({})
+
 
 async def async_setup(hass, config):
     """Set up a timer."""
     component = EntityComponent(_LOGGER, DOMAIN, hass)
 
+    entities = await _async_process_config(hass, config)
+
+    async def reload_service_handler(service_call):
+        """Remove all input booleans and load new ones from config."""
+        conf = await component.async_prepare_reload()
+        if conf is None:
+            return
+        new_entities = await _async_process_config(hass, conf)
+        if new_entities:
+            await component.async_add_entities(new_entities)
+
+    homeassistant.helpers.service.async_register_admin_service(
+        hass,
+        DOMAIN,
+        SERVICE_RELOAD,
+        reload_service_handler,
+        schema=RELOAD_SERVICE_SCHEMA,
+    )
+    component.async_register_entity_service(
+        SERVICE_START,
+        {
+            vol.Optional(
+                ATTR_DURATION, default=timedelta(DEFAULT_DURATION)
+            ): cv.time_period
+        },
+        "async_start",
+    )
+    component.async_register_entity_service(SERVICE_PAUSE, {}, "async_pause")
+    component.async_register_entity_service(SERVICE_CANCEL, {}, "async_cancel")
+    component.async_register_entity_service(SERVICE_FINISH, {}, "async_finish")
+
+    if entities:
+        await component.async_add_entities(entities)
+    return True
+
+
+async def _async_process_config(hass, config):
+    """Process config and create list of entities."""
     entities = []
 
     for object_id, cfg in config[DOMAIN].items():
@@ -91,32 +127,19 @@ async def async_setup(hass, config):
         restore = cfg.get(CONF_RESTORE)
         restore_grace_period = cfg.get(CONF_RESTORE_GRACE_PERIOD)
 
-        entities.append(Timer(hass, object_id, name, icon, duration, restore, restore_grace_period))
+        entities.append(
+            Timer(hass, object_id, name, icon, duration, restore, restore_grace_period)
+        )
 
-    if not entities:
-        return False
-
-    component.async_register_entity_service(
-        SERVICE_START, SERVICE_SCHEMA_DURATION, "async_start"
-    )
-    component.async_register_entity_service(
-        SERVICE_PAUSE, ENTITY_SERVICE_SCHEMA, "async_pause"
-    )
-    component.async_register_entity_service(
-        SERVICE_CANCEL, ENTITY_SERVICE_SCHEMA, "async_cancel"
-    )
-    component.async_register_entity_service(
-        SERVICE_FINISH, ENTITY_SERVICE_SCHEMA, "async_finish"
-    )
-
-    await component.async_add_entities(entities)
-    return True
+    return entities
 
 
 class Timer(RestoreEntity):
     """Representation of a timer."""
 
-    def __init__(self, hass, object_id, name, icon, duration, restore, restore_grace_period):
+    def __init__(
+        self, hass, object_id, name, icon, duration, restore, restore_grace_period
+    ):
         """Initialize a timer."""
         self.entity_id = ENTITY_ID_FORMAT.format(object_id)
         self._name = name
@@ -128,7 +151,6 @@ class Timer(RestoreEntity):
             self._restore_grace_period = restore_grace_period
         else:
             self._restore_grace_period = None
-        
         self._icon = icon
         self._hass = hass
         self._end = None
@@ -162,14 +184,13 @@ class Timer(RestoreEntity):
             ATTR_REMAINING: str(self._remaining),
             ATTR_RESTORE: str(self._restore),
             ATTR_RESTORE_GRACE_PERIOD: str(self._restore_grace_period),
-            ATTR_END: str(self._end.replace(tzinfo=timezone.utc).astimezone(tz=None)) \
-                      if self._end is not None \
+            ATTR_END: str(self._end.replace(tzinfo=timezone.utc).astimezone(tz=None))
+                      if self._end is not None
                       else None,
         }
 
     async def async_added_to_hass(self):
         """Call when entity is about to be added to Home Assistant."""
-        
         if not self._restore:
             self._state = STATUS_IDLE
             return
@@ -181,25 +202,44 @@ class Timer(RestoreEntity):
                 if state.state == check_status:
                     self._state = state.state
                     # restore last duration if config doesn't have a default
-                    if not self._duration and not state.attributes.get(ATTR_DURATION) == "None":
-                        duration_data = list(map(int, str(state.attributes.get(ATTR_DURATION)).split(":")))
-                        self._duration = timedelta(hours=duration_data[0], 
-                                                   minutes=duration_data[1], 
-                                                   seconds=duration_data[2])
+                    if (
+                        not self._duration
+                        and not state.attributes.get(ATTR_DURATION) == "None"
+                    ):
+                        duration_data = list(
+                            map(
+                                int, str(state.attributes.get(ATTR_DURATION)).split(":")
+                            )
+                        )
+                        self._duration = timedelta(
+                            hours=duration_data[0],
+                            minutes=duration_data[1],
+                            seconds=duration_data[2]
+                        )
                     # restore remaining (needed for paused state)
-                    if self._state == STATUS_PAUSED \
-                       and not state.attributes.get(ATTR_REMAINING) == "None" \
-                       and not state.attributes.get(ATTR_REMAINING) == str(timedelta()):
-                        remaining_dt = datetime.strptime(state.attributes.get(ATTR_REMAINING), "%H:%M:%S.%f")
-                        self._remaining = timedelta(hours=remaining_dt.hour,
-                                                    minutes=remaining_dt.minute,
-                                                    seconds=remaining_dt.second)
+                    if (
+                        self._state == STATUS_PAUSED
+                        and not state.attributes.get(ATTR_REMAINING) == "None"
+                        and not state.attributes.get(ATTR_REMAINING) == str(timedelta())
+                    ):
+                        remaining_dt = datetime.strptime(
+                            state.attributes.get(ATTR_REMAINING), "%H:%M:%S.%f"
+                        )
+                        self._remaining = timedelta(
+                            hours=remaining_dt.hour,
+                            minutes=remaining_dt.minute,
+                            seconds=remaining_dt.second
+                        )
                     else:
                         self._remaining = timedelta()
-                    self._end = datetime.strptime(state.attributes.get(ATTR_END), "%Y-%m-%d %H:%M:%S.%f%z") \
-                                if not state.attributes.get(ATTR_END) == "None" \
-                                   and state.attributes.get(ATTR_END) is not None \
-                                else None
+                    self._end = (
+                        datetime.strptime(
+                            state.attributes.get(ATTR_END), "%Y-%m-%d %H:%M:%S.%f%z"
+                        )
+                        if not state.attributes.get(ATTR_END) == "None"
+                        and state.attributes.get(ATTR_END) is not None
+                        else None
+                    )
 
                     if self._state == STATUS_ACTIVE:
                         self._remaining = self._end - dt_util.utcnow()
@@ -228,7 +268,6 @@ class Timer(RestoreEntity):
             event = EVENT_TIMER_RESTARTED
 
         self._state = STATUS_ACTIVE
-        # pylint: disable=redefined-outer-name
         start = dt_util.utcnow()
         if self._remaining and newduration is None:
             self._end = start + self._remaining
