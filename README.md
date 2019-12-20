@@ -1,5 +1,5 @@
 # Home Assistant Custom Timer :alarm_clock:
-Based on hassio timer from version [0.101.2](https://github.com/home-assistant/home-assistant/releases/tag/0.101.2).
+Based on hassio timer from version [0.103.2](https://github.com/home-assistant/home-assistant/releases/tag/0.103.2).
 
 Allows for restoring timer after restart.
 
