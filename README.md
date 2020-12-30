@@ -1,6 +1,7 @@
 # Home Assistant Custom Timer :alarm_clock:
-Based on hassio timer from version [0.105](https://github.com/home-assistant/home-assistant/releases/).
-**NOTE: This version is not compatible with previous versions.**
+Based on home assistant core timer from version [0.105](https://github.com/home-assistant/home-assistant/releases/).
+
+**NOTE: This version is not compatible with previous versions. But has been tested to work up to 2020.12.2**
 
 Allows for restoring timer after restart. Also compatible with timers > 24 hours.
 
@@ -50,7 +51,7 @@ Say you have the following timer. When the timer is `finished`, an automation is
         duration: '01:00:00'
         restore: true
         restore_grace_period: '00:15:00'
-
+    
     # Example automation.yaml entry
     - alias: Timer for patio light finished
       trigger:
@@ -67,9 +68,9 @@ _Scenario 1:_
 The timer is started with a duration of 1 hour. After 30 minutes have elapsed, Home Assistant is restarted. Since it only took a few minutes for Home Assistant to restart, your timer continues as expected and there is no difference than had you not restarted Home Assistant.
 
 _Scenario 2:_
- 
+
 The timer is started with a duration of 1 hour. After 30 minutes have elapsed, there is a power outage and Home Assistant is off for 31 minutes. When Home Assistant comes online, it sees that the timer should have `finished` 1 minute prior to it coming online. Since the `restore_grace_period` is set to 15 minutes and only 1 minute has passed since the timer should have `finished`, Home Assistant will fire the event `timer.finished` and the automation will be triggered. The timer will then return to its `idle` state.
 
 _Scenario 3:_
- 
+
 The timer is started with a duration of 1 hour. After 50 minutes have elapsed, there is a power outage and Home Assistant is off for 30 minutes. When Home Assistant comes online, it sees that the timer should have `finished` 20 minutes prior to it coming online. Since the `restore_grace_period` is set to 15 minutes and 20 minutes have passed since the timer should have `finished`, Home Assistant not fire the event and the automation will not be triggered. The timer will then return to its `idle` state.
