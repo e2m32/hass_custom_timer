@@ -323,7 +323,10 @@ class Timer(RestoreEntity):
                     break
                 if self._state == STATUS_ACTIVE:
                     try:
-                        self._remaining = self._end - dt_util.utcnow().replace(microsecond=0)
+                        if self._end:
+                            self._remaining = self._end - dt_util.utcnow().replace(microsecond=0)
+                        else:
+                            self._remaining = timedelta()
                         # Only restore if restore_grace_period not exceeded
                         if self._remaining + self._restore_grace_period >= timedelta():
                             self._state = STATUS_PAUSED
