@@ -14,7 +14,7 @@ By default, the timer will be restored at HA boot. If the time has passed for wh
 See Example below.
 
 ## Configuration
-Basic configuration is the same as before. To load the defaults, add the following to your configuration.yaml file:
+Basic configuration in YAML is the same as before. Adding timers from the UI does not support custom configuration parameters (as far as I can tell, do inform me if you find otherwise). To load the defaults, add the following to your configuration.yaml file:
 
     # Example configuration.yaml entry
     timer:
