@@ -1,7 +1,9 @@
 """Support for Timers."""
-from datetime import timedelta, datetime, timezone
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
 import logging
-import typing
+from typing import Dict, Optional
 
 import voluptuous as vol
 
@@ -33,9 +35,9 @@ DEFAULT_RESTORE = True
 DEFAULT_RESTORE_GRACE_PERIOD = 0
 ATTR_DURATION = "duration"
 ATTR_REMAINING = "remaining"
+ATTR_FINISHES_AT = "finishes_at"
 ATTR_RESTORE = "restore"
 ATTR_RESTORE_GRACE_PERIOD = "restore_grace_period"
-ATTR_END = "end"
 CONF_DURATION = "duration"
 CONF_RESTORE = "restore"
 CONF_RESTORE_GRACE_PERIOD = "restore_grace_period"
@@ -65,12 +67,23 @@ CREATE_FIELDS = {
     vol.Optional(CONF_NAME): cv.string,
     vol.Optional(CONF_ICON): cv.icon,
     vol.Optional(CONF_DURATION, default=DEFAULT_DURATION): cv.time_period,
+    vol.Optional(CONF_RESTORE, default=DEFAULT_RESTORE): cv.boolean,
+    vol.Optional(CONF_RESTORE_GRACE_PERIOD, default=DEFAULT_RESTORE_GRACE_PERIOD): cv.time_period,
 }
 UPDATE_FIELDS = {
     vol.Optional(CONF_NAME): cv.string,
     vol.Optional(CONF_ICON): cv.icon,
     vol.Optional(CONF_DURATION): cv.time_period,
+    vol.Optional(CONF_RESTORE): cv.boolean,
+    vol.Optional(CONF_RESTORE_GRACE_PERIOD): cv.time_period,
 }
+
+
+def _format_timedelta(delta: timedelta):
+    total_seconds = delta.total_seconds()
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{int(hours)}:{int(minutes):02}:{int(seconds):02}"
 
 
 def _none_to_empty_dict(value):
@@ -78,16 +91,6 @@ def _none_to_empty_dict(value):
         return {}
     return value
 
-def _time_str(time_value):
-    time_value = str(time_value)
-    if "day" in time_value:
-        part0 = str(time_value).split(",")
-        part1 = str(part0[0]).split(" ")
-        part0[0] = int(part1[0]) * 24
-        times = part0[1].split(":")
-        hour = part0[0] + int(times[0])
-        time_value = "{:02}:{:02}:{:02}".format(int(hour),int(times[1]),int(times[2]))
-    return time_value
 
 CONFIG_SCHEMA = vol.Schema(
     {
@@ -97,15 +100,16 @@ CONFIG_SCHEMA = vol.Schema(
                 {
                     vol.Optional(CONF_NAME): cv.string,
                     vol.Optional(CONF_ICON): cv.icon,
-                    vol.Optional(
-                        CONF_DURATION, default=DEFAULT_DURATION
-                    ): cv.time_period,
+                    vol.Optional(CONF_DURATION, default=DEFAULT_DURATION): vol.All(
+                        cv.time_period, _format_timedelta
+                    ),
                     vol.Optional(
                         CONF_RESTORE, default=DEFAULT_RESTORE
                     ): cv.boolean,
-                    vol.Optional(
-                        CONF_RESTORE_GRACE_PERIOD, default=DEFAULT_RESTORE_GRACE_PERIOD
-                    ): cv.time_period,
+                    vol.Optional(CONF_RESTORE_GRACE_PERIOD, 
+                        default=DEFAULT_RESTORE_GRACE_PERIOD): vol.All(
+                            cv.time_period, _format_timedelta
+                    )
                 },
             )
         )
@@ -124,8 +128,8 @@ async def async_setup(hass: HomeAssistantType, config: ConfigType) -> bool:
     yaml_collection = collection.YamlCollection(
         logging.getLogger(f"{__name__}.yaml_collection"), id_manager
     )
-    collection.attach_entity_component_collection(
-        component, yaml_collection, Timer.from_yaml
+    collection.sync_entity_lifecycle(
+        hass, DOMAIN, DOMAIN, component, yaml_collection, Timer.from_yaml
     )
 
     storage_collection = TimerStorageCollection(
@@ -133,7 +137,9 @@ async def async_setup(hass: HomeAssistantType, config: ConfigType) -> bool:
         logging.getLogger(f"{__name__}.storage_collection"),
         id_manager,
     )
-    collection.attach_entity_component_collection(component, storage_collection, Timer)
+    collection.sync_entity_lifecycle(
+        hass, DOMAIN, DOMAIN, component, storage_collection, Timer
+    )
 
     await yaml_collection.async_load(
         [{CONF_ID: id_, **cfg} for id_, cfg in config.get(DOMAIN, {}).items()]
@@ -143,9 +149,6 @@ async def async_setup(hass: HomeAssistantType, config: ConfigType) -> bool:
     collection.StorageCollectionWebsocket(
         storage_collection, DOMAIN, DOMAIN, CREATE_FIELDS, UPDATE_FIELDS
     ).async_setup(hass)
-
-    collection.attach_entity_registry_cleaner(hass, DOMAIN, DOMAIN, yaml_collection)
-    collection.attach_entity_registry_cleaner(hass, DOMAIN, DOMAIN, storage_collection)
 
     async def reload_service_handler(service_call: ServiceCallType) -> None:
         """Reload yaml entities."""
@@ -181,51 +184,57 @@ class TimerStorageCollection(collection.StorageCollection):
     CREATE_SCHEMA = vol.Schema(CREATE_FIELDS)
     UPDATE_SCHEMA = vol.Schema(UPDATE_FIELDS)
 
-    async def _process_create_data(self, data: typing.Dict) -> typing.Dict:
+    async def _process_create_data(self, data: Dict) -> Dict:
         """Validate the config is valid."""
         data = self.CREATE_SCHEMA(data)
         # make duration JSON serializeable
-        data[CONF_DURATION] = str(data[CONF_DURATION])
+        data[CONF_DURATION] = _format_timedelta(data[CONF_DURATION])
         data[CONF_RESTORE] = data[CONF_RESTORE]
-        data[CONF_RESTORE_GRACE_PERIOD] = str(data[CONF_RESTORE_GRACE_PERIOD])
+        data[CONF_RESTORE_GRACE_PERIOD] = _format_timedelta(data[CONF_RESTORE_GRACE_PERIOD])
         return data
 
     @callback
-    def _get_suggested_id(self, info: typing.Dict) -> str:
+    def _get_suggested_id(self, info: Dict) -> str:
         """Suggest an ID based on the config."""
         return info[CONF_NAME]
 
-    async def _update_data(self, data: dict, update_data: typing.Dict) -> typing.Dict:
+    async def _update_data(self, data: dict, update_data: Dict) -> Dict:
         """Return a new updated data object."""
         data = {**data, **self.UPDATE_SCHEMA(update_data)}
         # make duration JSON serializeable
-        data[CONF_DURATION] = str(data[CONF_DURATION])
-        data[CONF_RESTORE] = data[CONF_RESTORE]
-        data[CONF_RESTORE_GRACE_PERIOD] = str(data[CONF_RESTORE_GRACE_PERIOD])
+        if CONF_DURATION in update_data:
+            data[CONF_DURATION] = _format_timedelta(data[CONF_DURATION])
+        if CONF_RESTORE in update_data:        
+            data[CONF_RESTORE] = str(data[CONF_RESTORE])
+        if CONF_RESTORE_GRACE_PERIOD in update_data: 
+            data[CONF_RESTORE_GRACE_PERIOD] \
+                = _format_timedelta(data[CONF_RESTORE_GRACE_PERIOD])
         return data
 
 
 class Timer(RestoreEntity):
     """Representation of a timer."""
 
-    def __init__(self, config: typing.Dict):
+    def __init__(self, config: Dict):
         """Initialize a timer."""
-        self._config = config
-        self.editable = True
-        self._state = STATUS_IDLE
-        self._remaining = config[CONF_DURATION]
+        self._config: dict = config
+        self.editable: bool = True
+        self._state: str = STATUS_IDLE
+        self._duration = cv.time_period_str(config[CONF_DURATION])
+        self._remaining = self._duration
         self._restore = config.get(CONF_RESTORE, DEFAULT_RESTORE)
         if self._restore:
-            self._restore_grace_period = config.get(CONF_RESTORE_GRACE_PERIOD,
-                                                    DEFAULT_RESTORE_GRACE_PERIOD)
+            self._restore_grace_period: Optional[timedelta] \
+                = cv.time_period_str(config.get(CONF_RESTORE_GRACE_PERIOD, 
+                    DEFAULT_RESTORE_GRACE_PERIOD))
         else:
-            self._restore_grace_period = None
+            self._restore_grace_period: Optional[timedelta] = None
         
-        self._end = None
+        self._end: Optional[datetime] = None
         self._listener = None
 
     @classmethod
-    def from_yaml(cls, config: typing.Dict) -> "Timer":
+    def from_yaml(cls, config: Dict) -> Timer:
         """Return entity instance initialized from yaml storage."""
         timer = cls(config)
         timer.entity_id = ENTITY_ID_FORMAT.format(config[CONF_ID])
@@ -236,6 +245,11 @@ class Timer(RestoreEntity):
     def should_poll(self):
         """If entity should be polled."""
         return False
+
+    @property
+    def force_update(self) -> bool:
+        """Return True to fix restart issues."""
+        return True
 
     @property
     def name(self):
@@ -254,23 +268,21 @@ class Timer(RestoreEntity):
 
     @property
     def state_attributes(self):
-        """Return the state attributes."""
-        if self._end is None:
-            attr_end = None
-        else:
-            attr_end = str(self._end.replace(tzinfo=timezone.utc).astimezone(tz=None))
-
-        return {
-            ATTR_DURATION: _time_str(self._config[CONF_DURATION]),
+        """Return the state attributes."""     
+        attrs = {
+            ATTR_DURATION: _format_timedelta(self._duration),
             ATTR_EDITABLE: self.editable,
-            ATTR_REMAINING: _time_str(self._remaining),
+            ATTR_REMAINING: _format_timedelta(self._remaining),
             ATTR_RESTORE: str(self._restore),
-            ATTR_RESTORE_GRACE_PERIOD: str(self._restore_grace_period),
-            ATTR_END: attr_end
+            ATTR_RESTORE_GRACE_PERIOD: _format_timedelta(self._restore_grace_period),
         }
+        if self._end is not None:
+            attrs[ATTR_FINISHES_AT] = str(self._end.replace(tzinfo=timezone.utc).astimezone(tz=None))
+
+        return attrs
 
     @property
-    def unique_id(self) -> typing.Optional[str]:
+    def unique_id(self) -> Optional[str]:
         """Return unique id for the entity."""
         return self._config[CONF_ID]
 
@@ -315,32 +327,35 @@ class Timer(RestoreEntity):
                     self._remaining = timedelta()
                 # restore end time
                 try:
-                    if state.attributes.get(ATTR_END) is not None:
-                        self._end = datetime.strptime(state.attributes.get(ATTR_END), "%Y-%m-%d %H:%M:%S%z")
+                    if state.attributes.get(ATTR_FINISHES_AT) is not None:
+                        self._end = datetime.strptime(state.attributes.get(ATTR_FINISHES_AT), "%Y-%m-%d %H:%M:%S%z")
                     else:
                         self._end = None
                 except ValueError:
                     break
+                # timer was active
                 if self._state == STATUS_ACTIVE:
                     try:
+                        # account for lost time
                         if self._end:
                             self._remaining = self._end - dt_util.utcnow().replace(microsecond=0)
                         else:
                             self._remaining = timedelta()
-                        # Only restore if restore_grace_period not exceeded
+                        # only restore if restore_grace_period not exceeded
                         if self._remaining + self._restore_grace_period >= timedelta():
                             self._state = STATUS_PAUSED
                             self._end = None
-                            await self.async_start(None)
+                            self.async_start(None)
                         else:
                             self._state = STATUS_IDLE
                     except ValueError:
                         break
                 return
-        # Set state to IDLE if no recorded state, or invalid
+        # set state to IDLE if no recorded state, or invalid
         self._state = STATUS_IDLE
 
-    async def async_start(self, duration):
+    @callback
+    def async_start(self, duration: timedelta):
         """Start a timer."""
         if self._listener:
             self._listener()
@@ -355,24 +370,28 @@ class Timer(RestoreEntity):
 
         self._state = STATUS_ACTIVE
         start = dt_util.utcnow().replace(microsecond=0)
+
         if self._remaining and newduration is None:
             self._end = start + self._remaining
-        else:
-            if newduration:
-                self._config[CONF_DURATION] = newduration
-                self._remaining = newduration
-            else:
-                self._remaining = self._config[CONF_DURATION]
-            self._end = start + self._config[CONF_DURATION]
+        
+        elif newduration:
+            self._duration = newduration
+            self._remaining = newduration
+            self._end = start + self._duration
 
+        else:
+            self._remaining = self._duration
+            self._end = start + self._duration
+            
         self.hass.bus.async_fire(event, {"entity_id": self.entity_id})
 
         self._listener = async_track_point_in_utc_time(
-            self.hass, self.async_finished, self._end
+            self.hass, self._async_finished, self._end
         )
         self.async_write_ha_state()
 
-    async def async_pause(self):
+    @callback
+    def async_pause(self):
         """Pause a timer."""
         if self._listener is None:
             return
@@ -385,7 +404,8 @@ class Timer(RestoreEntity):
         self.hass.bus.async_fire(EVENT_TIMER_PAUSED, {"entity_id": self.entity_id})
         self.async_write_ha_state()
 
-    async def async_cancel(self):
+    @callback
+    def async_cancel(self):
         """Cancel a timer."""
         if self._listener:
             self._listener()
@@ -396,29 +416,40 @@ class Timer(RestoreEntity):
         self.hass.bus.async_fire(EVENT_TIMER_CANCELLED, {"entity_id": self.entity_id})
         self.async_write_ha_state()
 
-    async def async_finish(self):
+    @callback
+    def async_finish(self):
         """Reset and updates the states, fire finished event."""
         if self._state != STATUS_ACTIVE:
             return
 
         self._listener = None
         self._state = STATUS_IDLE
+        self._end = None
         self._remaining = timedelta()
         self.hass.bus.async_fire(EVENT_TIMER_FINISHED, {"entity_id": self.entity_id})
         self.async_write_ha_state()
 
-    async def async_finished(self, time):
+    @callback
+    def _async_finished(self, time):
         """Reset and updates the states, fire finished event."""
         if self._state != STATUS_ACTIVE:
             return
 
         self._listener = None
         self._state = STATUS_IDLE
+        self._end = None
         self._remaining = timedelta()
         self.hass.bus.async_fire(EVENT_TIMER_FINISHED, {"entity_id": self.entity_id})
         self.async_write_ha_state()
 
-    async def async_update_config(self, config: typing.Dict) -> None:
+    async def async_update_config(self, config: Dict) -> None:
         """Handle when the config is updated."""
         self._config = config
+        self._duration = cv.time_period_str(config[CONF_DURATION])
+        self._restore = config.get(CONF_RESTORE, DEFAULT_RESTORE)
+        if self._restore:
+            self._restore_grace_period: Optional[timedelta] \
+                = config.get(CONF_RESTORE_GRACE_PERIOD, DEFAULT_RESTORE_GRACE_PERIOD)
+        else:
+            self._restore_grace_period: Optional[timedelta] = None
         self.async_write_ha_state()

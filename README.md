@@ -1,7 +1,7 @@
 # Home Assistant Custom Timer :alarm_clock:
-Based on home assistant core timer from version [0.105](https://github.com/home-assistant/home-assistant/releases/).
+Based on home assistant core timer from version [2021.3.2](https://github.com/home-assistant/home-assistant/releases/).
 
-**NOTE: This version is not compatible with previous versions. But has been tested to work up to 2020.12.2**
+**NOTE: This version is has not been tested on versions prior to 2021.3.2**
 
 Allows for restoring timer after restart. Also compatible with timers > 24 hours.
 
