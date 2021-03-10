@@ -3,5 +3,6 @@
   "name": "Timer",
   "documentation": "https://www.home-assistant.io/integrations/timer",
   "codeowners": [],
-  "quality_scale": "internal"
+  "quality_scale": "internal",
+  "version": "2021.3.2"
 }
