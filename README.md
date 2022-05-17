@@ -1,3 +1,5 @@
+## This repository is deprecated. This functionality has now been added to [Home Assistant 2022.04](https://www.home-assistant.io/blog/2022/04/06/release-20224/). Thanks @raman325!
+
 # Home Assistant Custom Timer :alarm_clock:
 Based on home assistant core timer from version [2021.3.2](https://github.com/home-assistant/home-assistant/releases/).
 
